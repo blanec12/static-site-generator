@@ -1,6 +1,7 @@
 from textnode import TextType, TextNode
 from htmlnode import LeafNode
 import re
+from enum import Enum
 
 
 def text_node_to_html_node(text_node):
@@ -19,6 +20,16 @@ def text_node_to_html_node(text_node):
             return LeafNode("img", "", {"src": text_node.url, "alt": text_node.text})
         case _:
             raise ValueError(f"Error: text type {text_node.text_type} does not exist.")
+
+
+def text_to_textnodes(text):
+    nodes = [TextNode(text, TextType.PLAIN)]
+    nodes = split_nodes_delimiter(nodes, "`", TextType.CODE)
+    nodes = split_nodes_delimiter(nodes, "**", TextType.BOLD)
+    nodes = split_nodes_delimiter(nodes, "_", TextType.ITALIC)
+    nodes = split_nodes_image(nodes)
+    nodes = split_nodes_link(nodes)
+    return nodes
 
 
 def extract_markdown_images(text):
@@ -119,3 +130,43 @@ def split_nodes_image(old_nodes):
             new_nodes.append(TextNode(text, TextType.PLAIN))
 
     return new_nodes
+
+
+def markdown_to_blocks(markdown):
+    blocks = []
+    lines = markdown.split("\n\n")
+    for line in lines:
+        line = line.strip()
+        if line != "":
+            blocks.append(line)
+    return blocks
+
+
+class BlockType(Enum):
+    PARAGRAPH = "paragraph"
+    HEADING = "heading"
+    CODE = "code"
+    QUOTE = "quote"
+    UNORDERED_LIST = "unordered_list"
+    ORDERED_LIST = "ordered_list"
+
+
+def block_to_block_type(block):
+    if block.startswith(("# ", "## ", "### ", "#### ", "##### ", "###### ")):
+        return BlockType.HEADING
+
+    if block.startswith("```\n") and block.endswith("```"):
+        return BlockType.CODE
+
+    lines = block.split("\n")
+
+    if all(line.startswith(">") for line in lines):
+        return BlockType.QUOTE
+
+    if all(line.startswith("- ") for line in lines):
+        return BlockType.UNORDERED_LIST
+
+    if all(line.startswith(f"{i}. ") for i, line, in enumerate(lines, 1)):
+        return BlockType.ORDERED_LIST
+
+    return BlockType.PARAGRAPH

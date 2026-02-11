@@ -7,6 +7,10 @@ from utils import (
     extract_markdown_links,
     split_nodes_image,
     split_nodes_link,
+    text_to_textnodes,
+    markdown_to_blocks,
+    BlockType,
+    block_to_block_type,
 )
 
 
@@ -255,6 +259,169 @@ class TestSplitNodesImagesAndLinks(unittest.TestCase):
             ],
             new_nodes,
         )
+
+
+class TestTextToTextNodes(unittest.TestCase):
+    def test_text_to_textnodes_plain_only(self):
+        text = "just plain text"
+        self.assertEqual(
+            [TextNode("just plain text", TextType.PLAIN)],
+            text_to_textnodes(text),
+        )
+
+    def test_text_to_textnodes_bold_italic_code(self):
+        text = "a **b** c _d_ e `f` g"
+        self.assertEqual(
+            [
+                TextNode("a ", TextType.PLAIN),
+                TextNode("b", TextType.BOLD),
+                TextNode(" c ", TextType.PLAIN),
+                TextNode("d", TextType.ITALIC),
+                TextNode(" e ", TextType.PLAIN),
+                TextNode("f", TextType.CODE),
+                TextNode(" g", TextType.PLAIN),
+            ],
+            text_to_textnodes(text),
+        )
+
+    def test_text_to_textnodes_images_and_links(self):
+        text = "start ![alt](https://img.com/a.png) mid " "[link](https://boot.dev) end"
+        self.assertEqual(
+            [
+                TextNode("start ", TextType.PLAIN),
+                TextNode("alt", TextType.IMAGE, "https://img.com/a.png"),
+                TextNode(" mid ", TextType.PLAIN),
+                TextNode("link", TextType.LINK, "https://boot.dev"),
+                TextNode(" end", TextType.PLAIN),
+            ],
+            text_to_textnodes(text),
+        )
+
+    def test_text_to_textnodes_does_not_parse_links_inside_code(self):
+        text = "pre `code [x](https://a.com)` post"
+        self.assertEqual(
+            [
+                TextNode("pre ", TextType.PLAIN),
+                TextNode("code [x](https://a.com)", TextType.CODE),
+                TextNode(" post", TextType.PLAIN),
+            ],
+            text_to_textnodes(text),
+        )
+
+    def test_text_to_textnodes_adjacent_links_no_empty_plain_nodes(self):
+        text = "[a](https://a.com)[b](https://b.com)"
+        self.assertEqual(
+            [
+                TextNode("a", TextType.LINK, "https://a.com"),
+                TextNode("b", TextType.LINK, "https://b.com"),
+            ],
+            text_to_textnodes(text),
+        )
+
+    def test_text_to_textnodes_adjacent_images_no_empty_plain_nodes(self):
+        text = "![a](https://a.com/a.png)![b](https://b.com/b.png)"
+        self.assertEqual(
+            [
+                TextNode("a", TextType.IMAGE, "https://a.com/a.png"),
+                TextNode("b", TextType.IMAGE, "https://b.com/b.png"),
+            ],
+            text_to_textnodes(text),
+        )
+
+
+class TestMarkdownToBlocks(unittest.TestCase):
+    def test_markdown_to_blocks_single_block(self):
+        md = "This is a single block"
+        self.assertEqual(
+            ["This is a single block"],
+            markdown_to_blocks(md),
+        )
+
+    def test_markdown_to_blocks_multiple_blocks(self):
+        md = "Block one\n\nBlock two\n\nBlock three"
+        self.assertEqual(
+            ["Block one", "Block two", "Block three"],
+            markdown_to_blocks(md),
+        )
+
+    def test_markdown_to_blocks_strips_whitespace(self):
+        md = "  Block one  \n\n   Block two\n\nBlock three   "
+        self.assertEqual(
+            ["Block one", "Block two", "Block three"],
+            markdown_to_blocks(md),
+        )
+
+    def test_markdown_to_blocks_ignores_extra_blank_blocks(self):
+        md = "Block one\n\n\n\nBlock two\n\n\n\n\n\nBlock three"
+        self.assertEqual(
+            ["Block one", "Block two", "Block three"],
+            markdown_to_blocks(md),
+        )
+
+    def test_markdown_to_blocks_empty_string(self):
+        md = ""
+        self.assertEqual([], markdown_to_blocks(md))
+
+    def test_markdown_to_blocks_only_whitespace(self):
+        md = "   \n\n  \n\n"
+        self.assertEqual([], markdown_to_blocks(md))
+
+
+class TestBlockToBlockType(unittest.TestCase):
+    def test_heading_h1(self):
+        self.assertEqual(BlockType.HEADING, block_to_block_type("# Hello"))
+
+    def test_heading_h6(self):
+        self.assertEqual(BlockType.HEADING, block_to_block_type("###### Hello"))
+
+    def test_heading_too_many_hashes_is_paragraph(self):
+        self.assertEqual(BlockType.PARAGRAPH, block_to_block_type("####### Hello"))
+
+    def test_heading_no_space_is_paragraph(self):
+        self.assertEqual(BlockType.PARAGRAPH, block_to_block_type("#Hello"))
+
+    def test_code_block_multiline(self):
+        block = "```\ncode line 1\ncode line 2\n```"
+        self.assertEqual(BlockType.CODE, block_to_block_type(block))
+
+    def test_code_block_missing_newline_is_paragraph(self):
+        block = "```code\n```"
+        self.assertEqual(BlockType.PARAGRAPH, block_to_block_type(block))
+
+    def test_quote_single_line(self):
+        self.assertEqual(BlockType.QUOTE, block_to_block_type("> quote"))
+
+    def test_quote_multiline(self):
+        block = "> line1\n>line2\n> line3"
+        self.assertEqual(BlockType.QUOTE, block_to_block_type(block))
+
+    def test_quote_not_all_lines_are_quote_is_paragraph(self):
+        block = "> line1\nline2"
+        self.assertEqual(BlockType.PARAGRAPH, block_to_block_type(block))
+
+    def test_unordered_list(self):
+        block = "- a\n- b\n- c"
+        self.assertEqual(BlockType.UNORDERED_LIST, block_to_block_type(block))
+
+    def test_unordered_list_missing_space_is_paragraph(self):
+        block = "-a\n-b"
+        self.assertEqual(BlockType.PARAGRAPH, block_to_block_type(block))
+
+    def test_ordered_list(self):
+        block = "1. a\n2. b\n3. c"
+        self.assertEqual(BlockType.ORDERED_LIST, block_to_block_type(block))
+
+    def test_ordered_list_must_start_at_1(self):
+        block = "2. a\n3. b"
+        self.assertEqual(BlockType.PARAGRAPH, block_to_block_type(block))
+
+    def test_ordered_list_must_increment_by_1(self):
+        block = "1. a\n3. b"
+        self.assertEqual(BlockType.PARAGRAPH, block_to_block_type(block))
+
+    def test_paragraph_default(self):
+        block = "Just a normal paragraph\nwith two lines."
+        self.assertEqual(BlockType.PARAGRAPH, block_to_block_type(block))
 
 
 if __name__ == "__main__":
