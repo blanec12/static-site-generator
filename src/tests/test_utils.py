@@ -1,6 +1,13 @@
 import unittest
 from textnode import TextNode, TextType
-from utils import text_node_to_html_node, split_nodes_delimiter
+from utils import (
+    text_node_to_html_node,
+    split_nodes_delimiter,
+    extract_markdown_images,
+    extract_markdown_links,
+    split_nodes_image,
+    split_nodes_link,
+)
 
 
 class TestTextNodeToHTMLNode(unittest.TestCase):
@@ -133,6 +140,121 @@ class TestSplitNodesDelimiter(unittest.TestCase):
         node = TextNode("no code here", TextType.PLAIN)
         result = split_nodes_delimiter([node], "`", TextType.CODE)
         self.assertEqual(result, [TextNode("no code here", TextType.PLAIN)])
+
+
+class TestMarkdownExtraction(unittest.TestCase):
+    def test_extract_markdown_images(self):
+        matches = extract_markdown_images(
+            "This is text with an ![image](https://i.imgur.com/zjjcJKZ.png)"
+        )
+        self.assertListEqual([("image", "https://i.imgur.com/zjjcJKZ.png")], matches)
+
+    def test_extract_markdown_images_multiple(self):
+        matches = extract_markdown_images(
+            "![one](https://a.com/1.png) and ![two](https://b.com/2.jpg)"
+        )
+        self.assertListEqual(
+            [
+                ("one", "https://a.com/1.png"),
+                ("two", "https://b.com/2.jpg"),
+            ],
+            matches,
+        )
+
+    def test_extract_markdown_images_none(self):
+        matches = extract_markdown_images("This text has no images.")
+        self.assertListEqual([], matches)
+
+    def test_extract_markdown_links(self):
+        matches = extract_markdown_links(
+            "This is text with a link [to boot dev](https://www.boot.dev)"
+        )
+        self.assertListEqual([("to boot dev", "https://www.boot.dev")], matches)
+
+    def test_extract_markdown_links_multiple(self):
+        matches = extract_markdown_links(
+            "[one](https://a.com) and [two](https://b.com)"
+        )
+        self.assertListEqual(
+            [
+                ("one", "https://a.com"),
+                ("two", "https://b.com"),
+            ],
+            matches,
+        )
+
+    def test_extract_markdown_links_does_not_match_images(self):
+        matches = extract_markdown_links(
+            "![img](https://a.com/img.png) and [link](https://b.com)"
+        )
+        self.assertListEqual([("link", "https://b.com")], matches)
+
+
+class TestSplitNodesImagesAndLinks(unittest.TestCase):
+    def test_split_images(self):
+        node = TextNode(
+            "This is text with an ![image](https://i.imgur.com/zjjcJKZ.png) and another ![second image](https://i.imgur.com/3elNhQu.png)",
+            TextType.PLAIN,
+        )
+        new_nodes = split_nodes_image([node])
+        self.assertEqual(
+            [
+                TextNode("This is text with an ", TextType.PLAIN),
+                TextNode("image", TextType.IMAGE, "https://i.imgur.com/zjjcJKZ.png"),
+                TextNode(" and another ", TextType.PLAIN),
+                TextNode(
+                    "second image", TextType.IMAGE, "https://i.imgur.com/3elNhQu.png"
+                ),
+            ],
+            new_nodes,
+        )
+
+    def test_split_images_no_images_returns_original(self):
+        node = TextNode("Just plain text.", TextType.PLAIN)
+        new_nodes = split_nodes_image([node])
+        self.assertEqual([node], new_nodes)
+
+    def test_split_images_non_plain_passes_through(self):
+        node = TextNode("already bold", TextType.BOLD)
+        new_nodes = split_nodes_image([node])
+        self.assertEqual([node], new_nodes)
+
+    def test_split_links(self):
+        node = TextNode(
+            "This is text with a link [to boot dev](https://www.boot.dev) and [to youtube](https://www.youtube.com/@bootdotdev)",
+            TextType.PLAIN,
+        )
+        new_nodes = split_nodes_link([node])
+        self.assertEqual(
+            [
+                TextNode("This is text with a link ", TextType.PLAIN),
+                TextNode("to boot dev", TextType.LINK, "https://www.boot.dev"),
+                TextNode(" and ", TextType.PLAIN),
+                TextNode(
+                    "to youtube", TextType.LINK, "https://www.youtube.com/@bootdotdev"
+                ),
+            ],
+            new_nodes,
+        )
+
+    def test_split_links_no_links_returns_original(self):
+        node = TextNode("Just plain text.", TextType.PLAIN)
+        new_nodes = split_nodes_link([node])
+        self.assertEqual([node], new_nodes)
+
+    def test_split_links_does_not_create_empty_text_nodes(self):
+        node = TextNode(
+            "[a](https://a.com)[b](https://b.com)",
+            TextType.PLAIN,
+        )
+        new_nodes = split_nodes_link([node])
+        self.assertEqual(
+            [
+                TextNode("a", TextType.LINK, "https://a.com"),
+                TextNode("b", TextType.LINK, "https://b.com"),
+            ],
+            new_nodes,
+        )
 
 
 if __name__ == "__main__":
