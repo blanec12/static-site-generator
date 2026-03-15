@@ -11,6 +11,7 @@ from utils import (
     markdown_to_blocks,
     BlockType,
     block_to_block_type,
+    markdown_to_html_node,
 )
 
 
@@ -423,6 +424,92 @@ class TestBlockToBlockType(unittest.TestCase):
         block = "Just a normal paragraph\nwith two lines."
         self.assertEqual(BlockType.PARAGRAPH, block_to_block_type(block))
 
+
+class TestMarkdownToHTMLNode(unittest.TestCase):
+    def test_markdown_to_html_node_paragraph(self):
+        md = "This is a paragraph"
+        node = markdown_to_html_node(md)
+        self.assertEqual("<div><p>This is a paragraph</p></div>", node.to_html())
+
+    def test_markdown_to_html_node_heading(self):
+        md = "# Hello"
+        node = markdown_to_html_node(md)
+        self.assertEqual("<div><h1>Hello</h1></div>", node.to_html())
+
+    def test_markdown_to_html_node_quote(self):
+        md = "> this is a quote"
+        node = markdown_to_html_node(md)
+        self.assertEqual("<div><blockquote>this is a quote</blockquote></div>", node.to_html())
+
+    def test_markdown_to_html_node_multiline_quote(self):
+        md = "> line one\n> line two"
+        node = markdown_to_html_node(md)
+        self.assertEqual("<div><blockquote>line one line two</blockquote></div>", node.to_html())
+
+    def test_markdown_to_html_node_ol(self):
+        md = "1. first\n2. second\n3. third"
+        node = markdown_to_html_node(md)
+        self.assertEqual(
+            "<div><ol><li>first</li><li>second</li><li>third</li></ol></div>",
+            node.to_html(),
+        )
+
+    def test_markdown_to_html_node_ul(self):
+        md = "- a\n- b\n- c"
+        node = markdown_to_html_node(md)
+        self.assertEqual(
+            "<div><ul><li>a</li><li>b</li><li>c</li></ul></div>", node.to_html()
+        )
+
+    def test_markdown_to_html_node_code_block_no_inline_parsing(self):
+        md = "```\nthis is **not bold**\n```"
+        node = markdown_to_html_node(md)
+        self.assertEqual(
+            "<div><pre><code>this is **not bold**\n</code></pre></div>", node.to_html()
+        )
+
+    def test_multiple_paragraphs_with_inline_formatting(self):
+        md = """
+        This is **bolded** paragraph
+        text in a p
+        tag here
+
+        This is another paragraph with _italic_ text and `code` here
+        """
+        node = markdown_to_html_node(md)
+        self.assertEqual(
+            "<div><p>This is <b>bolded</b> paragraph text in a p tag here</p><p>This is another paragraph with <i>italic</i> text and <code>code</code> here</p></div>",
+            node.to_html(),
+        )
+
+    def test_multiline_code_block_preserves_literal_text(self):
+        md = """
+        ```
+        This is text that _should_ remain
+        the **same** even with inline stuff
+        ```
+        """
+        node = markdown_to_html_node(md)
+        self.assertEqual(
+            "<div><pre><code>This is text that _should_ remain\nthe **same** even with inline stuff\n</code></pre></div>",
+            node.to_html(),
+        )
+
+    def test_markdown_to_html_node_mixed(self):
+        md = """# Title
+
+        This is a _paragraph_.
+
+        - one
+        - two
+
+        > quoted text
+        """
+        node = markdown_to_html_node(md)
+        self.assertEqual(
+            "<div><h1>Title</h1><p>This is a <i>paragraph</i>.</p><ul><li>one</li><li>two</li></ul><blockquote>quoted text</blockquote></div>",
+            node.to_html(),
+        )
 
 if __name__ == "__main__":
     unittest.main()

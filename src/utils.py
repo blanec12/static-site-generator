@@ -1,7 +1,9 @@
 from textnode import TextType, TextNode
-from htmlnode import LeafNode
+from htmlnode import ParentNode, LeafNode
 import re
 from enum import Enum
+import textwrap
+import os
 
 
 def text_node_to_html_node(text_node):
@@ -133,13 +135,9 @@ def split_nodes_image(old_nodes):
 
 
 def markdown_to_blocks(markdown):
-    blocks = []
-    lines = markdown.split("\n\n")
-    for line in lines:
-        line = line.strip()
-        if line != "":
-            blocks.append(line)
-    return blocks
+    markdown = textwrap.dedent(markdown).strip()
+    blocks = re.split(r"\n\s*\n", markdown)
+    return [block.strip() for block in blocks if block.strip() != ""]
 
 
 class BlockType(Enum):
@@ -152,13 +150,15 @@ class BlockType(Enum):
 
 
 def block_to_block_type(block):
-    if block.startswith(("# ", "## ", "### ", "#### ", "##### ", "###### ")):
+    stripped_block = block.strip()
+
+    if stripped_block.startswith(("# ", "## ", "### ", "#### ", "##### ", "###### ")):
         return BlockType.HEADING
 
-    if block.startswith("```\n") and block.endswith("```"):
+    if stripped_block.startswith("```\n") and block.endswith("```"):
         return BlockType.CODE
 
-    lines = block.split("\n")
+    lines = [line.strip() for line in stripped_block.split("\n")]
 
     if all(line.startswith(">") for line in lines):
         return BlockType.QUOTE
@@ -170,3 +170,124 @@ def block_to_block_type(block):
         return BlockType.ORDERED_LIST
 
     return BlockType.PARAGRAPH
+
+
+def markdown_to_html_node(markdown):
+    blocks = markdown_to_blocks(markdown)
+    children = []
+    for block in blocks:
+        children.append(block_to_html_node(block))
+    return ParentNode("div", children, None)
+
+
+def block_to_html_node(block):
+    block_type = block_to_block_type(block)
+    match block_type:
+        case BlockType.PARAGRAPH:
+            return paragraph_to_html_node(block)
+        case BlockType.HEADING:
+            return heading_to_html_node(block)
+        case BlockType.CODE:
+            return code_to_html_node(block)
+        case BlockType.QUOTE:
+            return quote_to_html_node(block)
+        case BlockType.UNORDERED_LIST:
+            return unordered_list_to_html_node(block)
+        case BlockType.ORDERED_LIST:
+            return ordered_list_to_html_node(block)
+
+def text_to_children(text):
+    text_nodes = text_to_textnodes(text)
+    children = []
+    for text_node in text_nodes:
+        html_node = text_node_to_html_node(text_node)
+        children.append(html_node)
+    return children
+
+def paragraph_to_html_node(block):
+    text = block.replace("\n", " ")
+    children = text_to_children(text)
+    return ParentNode("p", children)
+
+def heading_to_html_node(block):
+    level = len(block.split(" ")[0])
+    text = block[level+1:]
+    children = text_to_children(text)
+    return ParentNode(f"h{level}", children)
+
+def code_to_html_node(block):
+    text = block[4:-3]
+    text_node = TextNode(text, TextType.PLAIN)
+    html_node = text_node_to_html_node(text_node)
+    code = ParentNode("code", [html_node])
+    return ParentNode("pre", [code])
+
+def quote_to_html_node(block):
+    lines = block.splitlines()
+    cleaned_lines = [line[1:].strip() for line in lines]
+    text = " ".join(cleaned_lines)
+    children = text_to_children(text)
+    return ParentNode("blockquote", children)
+
+def unordered_list_to_html_node(block):
+    items = block.splitlines()
+    html_nodes = []
+    for item in items:
+        text = item.strip()[2:]
+        child = text_to_children(text)
+        html_nodes.append(ParentNode("li", child))
+    return ParentNode("ul", html_nodes)
+
+
+def ordered_list_to_html_node(block):
+    items = block.splitlines()
+    html_nodes = []
+    for item in items:
+        text = item.strip()[3:]
+        child = text_to_children(text)
+        html_nodes.append(ParentNode("li", child))
+    return ParentNode("ol", html_nodes)
+
+def extract_title(markdown):
+    for line in markdown.split("\n"):
+        line = line.strip()
+        if line.startswith("# "):
+            title = line[1:].strip()
+            return title
+    raise ValueError("Could not extract title")
+
+def generate_page(from_path, template_path, dest_path):
+    print(f"Generating page from {from_path} to {dest_path} using {template_path}")
+
+    with open(from_path, "r") as markdown_file:
+        markdown = markdown_file.read()
+
+    with open(template_path, "r") as template_file:
+        template = template_file.read()
+
+    title = extract_title(markdown)
+    html_node = markdown_to_html_node(markdown)
+    html = html_node.to_html()
+
+    template = template.replace("{{ Title }}", title)
+    template = template.replace("{{ Content }}", html)
+
+    with open(dest_path, "w") as dest_file:
+        dest_file.write(template)
+
+def generate_pages_recursive(dir_path_content, template_path, dest_dir_path):
+    os.makedirs(dest_dir_path, exist_ok=True)
+
+    for entry in os.listdir(dir_path_content):
+        content_entry_path = os.path.join(dir_path_content, entry)
+        dest_entry_path = os.path.join(dest_dir_path, entry)
+
+        if os.path.isfile(content_entry_path):
+            if content_entry_path.endswith(".md"):
+                html_dest_path = os.path.splitext(dest_entry_path)[0] + ".html"
+                print(f"Generating page from {content_entry_path} to {html_dest_path}")
+                generate_page(content_entry_path, template_path, html_dest_path)
+
+        elif os.path.isdir(content_entry_path):
+            print(f"Entering directory: {content_entry_path}")
+            generate_pages_recursive(content_entry_path, template_path, dest_entry_path)
