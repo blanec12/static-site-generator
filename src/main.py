@@ -10,6 +10,8 @@ def main():
     else:
         basepath = "/"
 
+    print(basepath)
+
     copy_static_to_public("static", "docs")
     generate_pages_recursive("content", "template.html", "docs", basepath)
 
