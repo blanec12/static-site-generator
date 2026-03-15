@@ -256,7 +256,7 @@ def extract_title(markdown):
             return title
     raise ValueError("Could not extract title")
 
-def generate_page(from_path, template_path, dest_path):
+def generate_page(from_path, template_path, dest_path, basepath):
     print(f"Generating page from {from_path} to {dest_path} using {template_path}")
 
     with open(from_path, "r") as markdown_file:
@@ -269,13 +269,17 @@ def generate_page(from_path, template_path, dest_path):
     html_node = markdown_to_html_node(markdown)
     html = html_node.to_html()
 
-    template = template.replace("{{ Title }}", title)
-    template = template.replace("{{ Content }}", html)
+    page = template.replace("{{ Title }}", title)
+    page = page.replace("{{ Content }}", html)
+    page = page.replace('href="/', f'href="{basepath}')
+    page = page.replace('src="/', f'src="{basepath}')
+
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
     with open(dest_path, "w") as dest_file:
-        dest_file.write(template)
+        dest_file.write(page)
 
-def generate_pages_recursive(dir_path_content, template_path, dest_dir_path):
+def generate_pages_recursive(dir_path_content, template_path, dest_dir_path, basepath):
     os.makedirs(dest_dir_path, exist_ok=True)
 
     for entry in os.listdir(dir_path_content):
@@ -286,8 +290,8 @@ def generate_pages_recursive(dir_path_content, template_path, dest_dir_path):
             if content_entry_path.endswith(".md"):
                 html_dest_path = os.path.splitext(dest_entry_path)[0] + ".html"
                 print(f"Generating page from {content_entry_path} to {html_dest_path}")
-                generate_page(content_entry_path, template_path, html_dest_path)
+                generate_page(content_entry_path, template_path, html_dest_path, basepath)
 
         elif os.path.isdir(content_entry_path):
             print(f"Entering directory: {content_entry_path}")
-            generate_pages_recursive(content_entry_path, template_path, dest_entry_path)
+            generate_pages_recursive(content_entry_path, template_path, dest_entry_path, basepath)
